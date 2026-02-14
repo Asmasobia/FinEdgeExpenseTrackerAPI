@@ -1,0 +1,11 @@
+{
+  "name": "finedgeexpensetrackerapi",
+  "version": "1.0.0",
+  "description": "\"A Node js for expenses",
+  "main": "app.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "author": "",
+  "license": "MIT"
+}
