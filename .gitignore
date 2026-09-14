@@ -24,6 +24,13 @@ coverage/
 *.log
 npm-debug.log*
 
+# In-progress atomic writes. src/utils/jsonStore.js writes a sibling temp file and then
+# renames it over the target, so under normal operation these exist for microseconds. If the
+# process is killed mid-write one can survive, and it would otherwise show up as untracked
+# and get swept into the next `git add .` — committing a partial copy of the data file.
+src/data/*.tmp
+.*.json.*.tmp
+
 # Editor and OS noise
 .vscode/
 .idea/

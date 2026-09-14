@@ -54,7 +54,16 @@ exports.registerUser = async ({ username, email, password }) => {
     password: hashedPassword,
     createdAt: new Date().toISOString(),
   };
-  await UserModel.create(newUser);
+  // The `findByEmail` check above is an optimisation, not the guarantee. It cannot be the
+  // guarantee: it is a separate await from the insert, so two simultaneous registrations of the
+  // same address both pass it. `UserModel.create` re-checks inside its critical section and
+  // returns null if the address was taken in the meantime — that is the authoritative test, and
+  // the same 409 is raised either way, so the client cannot tell which check caught it.
+  //
+  // The earlier check is still worth keeping, because it rejects the ordinary duplicate before
+  // paying for a ~80 ms bcrypt hash.
+  const created = await UserModel.create(newUser);
+  if (created === null) throw new ConflictError('An account with that email already exists');
 
   // Deliberately returns only the id — never the user object. Spreading `newUser` into a
   // response would hand the bcrypt hash to the client, which is a slow offline cracking
