@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const config = require('../config');
+const { ConflictError, UnauthorizedError, ValidationError } = require('../errors');
 const UserModel = require('../models/userModel');
 
 /**
@@ -17,7 +18,11 @@ const UserModel = require('../models/userModel');
 const BCRYPT_COST = 10;
 
 exports.registerUser = async ({ username, email, password }) => {
-  if (!username || !email || !password) throw new Error('All fields are required');
+  // Kept as a backstop even though `validateRegister` now rejects these at the edge. The
+  // middleware protects the HTTP route; this protects the function, which a test, a script or a
+  // future queue consumer can call without passing through Express at all. Validation at the
+  // boundary is for good error messages; validation here is for the invariant.
+  if (!username || !email || !password) throw new ValidationError('username, email and password are required');
 
   // Store the email in the same normalised form that `findByEmail` compares against.
   // Without this the check below and the lookup at login could disagree: registering
@@ -27,7 +32,19 @@ exports.registerUser = async ({ username, email, password }) => {
   const normalisedEmail = email.trim().toLowerCase();
 
   const existing = await UserModel.findByEmail(normalisedEmail);
-  if (existing) throw new Error('Email exists');
+  // Was `throw new Error('Email exists')`, which the error handler turned into a 500. A taken
+  // address is not a server fault: the request is well formed, it just conflicts with state
+  // that already exists, which is precisely what 409 means. 500 told the client to retry a
+  // request that can never succeed, and told the operator's alerting the server was broken.
+  //
+  // This message is intentionally specific, unlike the login error below, and the asymmetry is
+  // deliberate rather than an oversight. Registration is inherently an existence oracle — it
+  // cannot both prevent duplicate accounts and hide whether an address is taken — so being
+  // vague here would cost real usability to conceal nothing. Login has no such excuse, so it
+  // stays opaque. (Closing this properly means not answering synchronously at all: accept the
+  // registration, then mail the address either a confirmation or a "someone tried to register
+  // you" notice. That needs a mail sender this project does not have.)
+  if (existing) throw new ConflictError('An account with that email already exists');
 
   const hashedPassword = await bcrypt.hash(password, BCRYPT_COST);
   const newUser = {
@@ -46,7 +63,7 @@ exports.registerUser = async ({ username, email, password }) => {
 };
 
 exports.loginUser = async ({ email, password }) => {
-  if (!email || !password) throw new Error('Email and Password are required');
+  if (!email || !password) throw new ValidationError('email and password are required');
 
   const user = await UserModel.findByEmail(email);
 
@@ -57,8 +74,11 @@ exports.loginUser = async ({ email, password }) => {
   // since a missing user skips the ~80 ms bcrypt comparison entirely. Closing that
   // properly means comparing against a dummy hash so both paths cost the same, which is
   // noted as a known limitation rather than silently left unmentioned.
+  // 401, not 500. Wrong credentials are the single most ordinary outcome a login endpoint has;
+  // reporting them as a server error meant a typo'd password was indistinguishable in the logs
+  // and the metrics from the database being down.
   if (!user || !(await bcrypt.compare(password, user.password))) {
-    throw new Error('Invalid credentials');
+    throw new UnauthorizedError('Invalid credentials', 'INVALID_CREDENTIALS');
   }
 
   // Reads from the validated config rather than `process.env.JWT_SECRET` directly, so a

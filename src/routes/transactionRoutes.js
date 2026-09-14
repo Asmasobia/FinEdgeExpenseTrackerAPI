@@ -51,10 +51,15 @@ router.use(requireAuth);
  */
 router.get('/summary', getSummary);
 
-router.post('/', validator.validateTransaction, addTransaction);
+/**
+ * POST and PATCH now use DIFFERENT validators. They used to share one, which is why
+ * `PATCH { amount: 50 }` was a 400: the shared function required all four fields, so the one
+ * verb whose entire purpose is partial update could not perform a partial update.
+ */
+router.post('/', validator.validateCreateTransaction, addTransaction);
 router.get('/', getAllTransactions);
 router.get('/:id', getTransactionById);
-router.patch('/:id', validator.validateTransaction, updateTransaction);
+router.patch('/:id', validator.validatePatchTransaction, updateTransaction);
 router.delete('/:id', deleteTransaction);
 
 module.exports = router;

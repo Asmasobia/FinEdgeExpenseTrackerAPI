@@ -7,8 +7,17 @@
  * ever left off a route, `req.user` is undefined and the handler throws on property access
  * rather than quietly serving unscoped data: the mistake is loud, at the first request, in
  * development.
+ *
+ * Writes persist `req.validated`, never `req.body`. `req.validated` is the whitelisted,
+ * normalised object the validator built from known fields only; `req.body` is whatever the
+ * client sent. Storing the raw body let a client add arbitrary keys to a stored row (mass
+ * assignment). The same reasoning as `req.user`: read from the property some trusted middleware
+ * produced, not from the one the client controls — and here, as there, a route that forgets its
+ * middleware fails loudly, because `req.validated` is undefined and the model's ownerId/field
+ * guards reject it.
  */
 
+const { NotFoundError } = require('../errors');
 const transactionService = require('../services/transactionService');
 
 exports.addTransaction = async (req, res, next) => {
@@ -17,7 +26,7 @@ exports.addTransaction = async (req, res, next) => {
     // something merged into the body, so there is no moment where trusted identity and
     // untrusted input live in the same object and the code has to remember which key came
     // from where.
-    const transaction = await transactionService.addTransaction(req.user.userId, req.body);
+    const transaction = await transactionService.addTransaction(req.user.userId, req.validated);
     res.status(201).json(transaction);
   } catch (error) {
     next(error);
@@ -39,7 +48,7 @@ exports.getTransactionById = async (req, res, next) => {
     // 404 here means one of two things — no such transaction, or one that exists but is not
     // this caller's. Deliberately indistinguishable; see `findByIdForOwner` in the model for
     // why telling them apart would let a caller enumerate other users' record ids.
-    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    if (!transaction) return next(new NotFoundError('Transaction not found'));
     res.status(200).json(transaction);
   } catch (error) {
     next(error);
@@ -48,8 +57,8 @@ exports.getTransactionById = async (req, res, next) => {
 
 exports.updateTransaction = async (req, res, next) => {
   try {
-    const transaction = await transactionService.updateTransaction(req.user.userId, req.params.id, req.body);
-    if (!transaction) return res.status(404).json({ message: 'Transaction not found' });
+    const transaction = await transactionService.updateTransaction(req.user.userId, req.params.id, req.validated);
+    if (!transaction) return next(new NotFoundError('Transaction not found'));
     res.status(200).json(transaction);
   } catch (error) {
     next(error);
@@ -63,7 +72,7 @@ exports.deleteTransaction = async (req, res, next) => {
     // Two independent faults sat on this one path: this, and a model function that
     // did not exist under the name the service called.
     const deleted = await transactionService.deleteTransaction(req.user.userId, req.params.id);
-    if (!deleted) return res.status(404).json({ message: 'Transaction not found' });
+    if (!deleted) return next(new NotFoundError('Transaction not found'));
     res.status(200).json({ message: 'Transaction deleted' });
   } catch (error) {
     next(error);

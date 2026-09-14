@@ -36,6 +36,7 @@
 const jwt = require('jsonwebtoken');
 
 const config = require('../config');
+const { UnauthorizedError } = require('../errors');
 
 /**
  * Pull the token out of an `Authorization: Bearer <token>` header.
@@ -55,24 +56,29 @@ function extractBearerToken(header) {
 }
 
 /**
- * Require a valid token. On success attaches `req.user` and calls `next()`; otherwise ends
- * the request with 401.
+ * Require a valid token. On success attaches `req.user` and calls `next()`; otherwise fails the
+ * request with 401.
  *
- * Responds directly instead of delegating to `next(error)` because the current
- * errorHandler maps every error to 500, which would report a missing token as a server
- * fault. Once the error taxonomy exists this could throw an `UnauthorizedError` instead;
- * until then, answering here is what makes the status correct.
+ * This used to build its own `res.status(401).json(...)` responses, because at the time the
+ * error handler mapped everything to 500 and delegating would have reported a missing token as
+ * a server fault. Now that typed errors exist, it hands `UnauthorizedError` to `next()` instead
+ * — which is better for a reason beyond tidiness: a middleware that writes its own response is
+ * a second, parallel definition of what an error body looks like, and the two drift. Every
+ * failure in the application now takes one path and comes out in one shape.
  *
- * 401 (not 403) is the right code: 401 means "I do not know who you are", 403 means "I
- * know who you are and you may not do this". A missing or invalid token is the former.
+ * 401 (not 403) is the right code: 401 means "I do not know who you are", 403 means "I know who
+ * you are and you may not do this". A missing or invalid token is the former.
  */
 exports.requireAuth = (req, res, next) => {
   const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
-    return res.status(401).json({
-      message: 'Missing or malformed Authorization header. Expected: Authorization: Bearer <token>',
-    });
+    return next(
+      new UnauthorizedError(
+        'Missing or malformed Authorization header. Expected: Authorization: Bearer <token>',
+        'NO_CREDENTIALS'
+      )
+    );
   }
 
   try {
@@ -92,7 +98,7 @@ exports.requireAuth = (req, res, next) => {
     // `undefined` and, without the model's own guard, match records that also lack an
     // owner. Rejecting it here keeps that from ever becoming a data leak.
     if (!payload || typeof payload.userId !== 'string' || payload.userId === '') {
-      return res.status(401).json({ message: 'Token is valid but carries no user identity' });
+      return next(new UnauthorizedError('Token is valid but carries no user identity', 'INVALID_TOKEN'));
     }
 
     req.user = { userId: payload.userId };
@@ -102,11 +108,16 @@ exports.requireAuth = (req, res, next) => {
     // already holds the token, so "it expired" reveals nothing it does not know, and it
     // tells a client to refresh rather than to prompt for a new password.
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ message: 'Token expired' });
+      return next(new UnauthorizedError('Token expired', 'TOKEN_EXPIRED'));
     }
     // Everything else — bad signature, malformed structure, wrong algorithm — collapses
     // into one message on purpose. Explaining precisely why a forgery failed is free
     // feedback for whoever is iterating on forgeries.
-    return res.status(401).json({ message: 'Invalid token' });
+    //
+    // Note that the original error is deliberately NOT chained onto this one. Attaching it
+    // would put jsonwebtoken's internal text one `cause` hop away from a response body, which
+    // is the kind of accident the `expose` flag exists to prevent; the detail is not lost,
+    // because the handler logs the 4xx line and the token itself is in the request.
+    return next(new UnauthorizedError('Invalid token', 'INVALID_TOKEN'));
   }
 };
