@@ -42,7 +42,11 @@ exports.updateTransaction = async (req,res,next)=>{
 
 exports.deleteTransaction = async (req,res,next)=>{
     try{
-        const deleted = await transactionService.deleteTransaction(re.params.id);
+        // Was `re.params.id` — a typo for `req`, and an undefined identifier, so every
+        // DELETE threw `ReferenceError: re is not defined` before reaching the service.
+        // Two independent faults sat on this one path: this, and a model function that
+        // did not exist under the name the service called.
+        const deleted = await transactionService.deleteTransaction(req.params.id);
         if(!deleted) return res.status(404).json({message:'Transaction not found'});
         res.status(200).json({message:'Transaction deleted'});
     }catch(error){
