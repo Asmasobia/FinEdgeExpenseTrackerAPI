@@ -1,0 +1,21 @@
+# Normalise line endings so the repository is byte-identical regardless of platform.
+#
+# Without this, a clone on Windows checks files out with CRLF and every one of them shows
+# as modified on a Mac or in CI — reviews fill with whole-file diffs containing no actual
+# change, and `git blame` stops being useful. `git add` on this repo was already emitting
+# "LF will be replaced by CRLF" warnings, which is that drift starting.
+#
+# `text=auto` means: normalise to LF *in the repository*, check out using the platform's
+# native convention. Windows editors still see CRLF locally; only stored content changes.
+* text=auto eol=lf
+
+# Files whose content is not line-oriented. Marking them explicitly stops git from ever
+# attempting normalisation, which would corrupt them silently.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+
+# Lockfiles are generated, not written. Collapsing them in diffs keeps a dependency bump
+# from burying the code changes it accompanies.
+package-lock.json linguist-generated=true diff=none

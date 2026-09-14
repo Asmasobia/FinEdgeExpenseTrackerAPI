@@ -1,2 +1,31 @@
+# Installed packages. Reproducible from package.json + package-lock.json, and large
+# enough that committing it makes every diff unreadable.
 node_modules/
+
+# Real secrets. Two lines, not one, and the distinction matters:
+#
+#   .env      the actual file, holding the actual JWT_SECRET
+#   .env.*    variants such as .env.local, .env.production
+#
+# The original .gitignore had ONLY `.env.*`. That pattern does not match `.env` —
+# the `.*` requires a literal dot and at least one character after it. So the one
+# file that actually contains a secret was the one file not ignored, and a routine
+# `git add .` would have published it. A near-miss like this is worth a comment
+# rather than a silent fix, because the same mistake reads as correct at a glance.
+#
+# `.env.example` is deliberately NOT ignored (see the negation below): it carries
+# placeholders only, and it is the file that tells a new cloner what to set.
+.env
 .env.*
+!.env.example
+
+# Runtime and tooling output
+coverage/
+*.log
+npm-debug.log*
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

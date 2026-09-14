@@ -1,10 +1,21 @@
 {
-  "name": "finedgeexpensetrackerapi",
+  "name": "finedge-expense-tracker-api",
   "version": "1.0.0",
-  "description": "\"A Node js for expenses",
-  "main": "app.js",
+  "description": "A Node.js REST API for tracking personal income and expenses",
+  "main": "src/app.js",
+  "engines": {
+    "node": ">=18.11.0"
+  },
   "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
     "test": "jest"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3"
   },
   "author": "",
   "license": "MIT"
