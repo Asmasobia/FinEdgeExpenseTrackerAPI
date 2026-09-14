@@ -2,6 +2,7 @@ const crypto = require('crypto');
 
 const transactionModel = require('../models/transactionModel');
 const analytics = require('../utils/analytics');
+const insights = require('../utils/insights');
 
 /**
  * Create a transaction.
@@ -89,4 +90,17 @@ exports.deleteTransaction = async (ownerId, id) => transactionModel.removeForOwn
 exports.getSummary = async (ownerId) => {
   const transactions = await transactionModel.getAllForOwner(ownerId);
   return analytics.calculateSummary(transactions);
+};
+
+/**
+ * A suggested monthly budget for the caller, derived from their own spending.
+ *
+ * The utility behind this (`src/utils/insights.js`, formerly `aiHelper.js`) existed but was imported
+ * by nothing — dead code that the README advertised as a feature. This is the wiring that makes the
+ * claim true. Same owner-scoped read as the summary, for the same reason: a budget suggestion
+ * computed over everybody's spending would be a single plausible number that is quietly wrong.
+ */
+exports.getInsights = async (ownerId) => {
+  const transactions = await transactionModel.getAllForOwner(ownerId);
+  return insights.suggestBudget(transactions);
 };

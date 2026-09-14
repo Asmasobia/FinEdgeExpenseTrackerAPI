@@ -51,6 +51,59 @@ const MAX_PASSWORD_BYTES = 72;
 /** Strict `YYYY-MM-DD`. See `validateDate` for why the shape is checked before parsing. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+const MAX_AMOUNT_DECIMALS = 2;
+
+/**
+ * Largest accepted amount: one trillion.
+ *
+ * Not an arbitrary "big number". `analytics.calculateSummary` sums in integer cents, and integers
+ * stay exact in a JS number only below 2^53 (about 9.007 × 10^15). A cap of 10^12 means the cent
+ * value is at most 10^14, so even a large ledger of maximum-size entries cannot push a total into
+ * the range where integer arithmetic starts silently losing precision. The other reason is plainer:
+ * no personal expense is a trillion, so a value this large is a client bug or a probe, and either is
+ * better answered with a 400 than stored.
+ */
+const MAX_AMOUNT = 1e12;
+
+/**
+ * How many decimal places a number actually has.
+ *
+ * This exists because the obvious implementation is wrong in a way that is easy to miss and was
+ * genuinely shipped here before being caught by a mutation test. The previous check was:
+ *
+ *     if (Math.round(value * 100) !== value * 100) return 'must have at most 2 decimal places';
+ *
+ * which rejected `4.35`, `8.7`, `1.15` and `0.29` — ordinary two-decimal prices. The reason is the
+ * same floating-point behaviour the check was written to defend against: `4.35 * 100` is not `435`,
+ * it is `434.99999999999994`, so the comparison fails for a value that is perfectly well formed. A
+ * validation rule implemented with the arithmetic it is meant to guard cannot be trusted.
+ *
+ * The fix is to stop doing arithmetic and read the number's own decimal representation instead.
+ * `String(n)` in JavaScript produces the SHORTEST decimal string that round-trips back to exactly
+ * that double — which is, by construction, the number the client meant. `String(4.35)` is `"4.35"`
+ * (two places, accepted) and `String(10.555)` is `"10.555"` (three, rejected). No tolerance to pick,
+ * and no dependence on magnitude.
+ *
+ * The exponential branch is not hypothetical: `String()` switches to `e` notation for magnitudes
+ * below 1e-6 and at or above 1e21, so `0.0000001` arrives as `"1e-7"`. Without this branch that
+ * string contains no `.` and would be read as having zero decimal places — a sub-cent amount
+ * sailing through the exact check meant to stop it.
+ */
+function decimalPlaces(value) {
+  const text = String(value);
+
+  if (text.includes('e') || text.includes('E')) {
+    const [mantissa, exponent] = text.toLowerCase().split('e');
+    const mantissaPlaces = mantissa.includes('.') ? mantissa.split('.')[1].length : 0;
+    // A negative exponent shifts the point right, adding places; a positive one removes them, and
+    // cannot take the count below zero.
+    return Math.max(0, mantissaPlaces - Number(exponent));
+  }
+
+  const dot = text.indexOf('.');
+  return dot === -1 ? 0 : text.length - dot - 1;
+}
+
 /**
  * Deliberately loose email check: something, an @, something, a dot, something.
  *
@@ -102,12 +155,19 @@ function validateAmount(value) {
   // "Non-negative" and "truthy" are not the same test, and only one of them is correct here.
   if (value < 0) return 'must not be negative (use type: expense instead of a negative amount)';
 
+  // Bounded above, so that the integer-cent arithmetic in analytics.calculateSummary stays exact.
+  // See MAX_AMOUNT.
+  if (value > MAX_AMOUNT) return `must be at most ${MAX_AMOUNT}`;
+
   // Money in a float is a compromise this project accepts and should name: 0.1 + 0.2 is not
   // 0.3 in IEEE 754, so a long column of these drifts. The robust fix is to store minor units
   // as integers (cents/paise) and format at the edges. Short of that, capping at two decimal
   // places keeps values on the grid real currency uses and rejects the sub-unit noise that
   // makes drift compound.
-  if (Math.round(value * 100) !== value * 100) return 'must have at most 2 decimal places';
+  //
+  // Counted from the number's decimal representation rather than by multiplying by 100 — see
+  // `decimalPlaces` for why the multiplication approach rejected legitimate values like 4.35.
+  if (decimalPlaces(value) > MAX_AMOUNT_DECIMALS) return `must have at most ${MAX_AMOUNT_DECIMALS} decimal places`;
   return null;
 }
 

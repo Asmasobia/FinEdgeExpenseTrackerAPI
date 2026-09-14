@@ -105,6 +105,24 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
   process.exit(1);
 }
 
+/**
+ * Where the JSON data files live.
+ *
+ * This became configurable for the test suite, and the reason is worth stating because it is a
+ * general trap rather than a detail of this project. The models previously resolved
+ * `__dirname/../data/transactions.json` at require time, which meant a test that exercised a
+ * write would write to the developer's real data files — deleting their records, and leaving the
+ * committed `transactions.json` dirty in `git status` afterwards. Worse, tests sharing one file
+ * cannot run in parallel: Jest runs test files in separate worker processes, so the in-process
+ * lock from jsonStore.js does not span them and two suites would race exactly as two servers
+ * would. Each suite pointing at its own temp directory removes both problems.
+ *
+ * Resolved against the repo root rather than the current working directory, for the same reason
+ * `dotenv` is: it must not matter where the process was launched from. An absolute value passed
+ * in is used as-is, which is what the tests do.
+ */
+const dataDir = path.resolve(__dirname, '..', process.env.DATA_DIR || 'src/data');
+
 module.exports = {
   nodeEnv: NODE_ENV,
   isProduction: NODE_ENV === 'production',
@@ -113,4 +131,5 @@ module.exports = {
   jwtSecret: process.env.JWT_SECRET,
   /** Lifetime of an issued token, in `jsonwebtoken`'s `expiresIn` format. */
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1h',
+  dataDir,
 };

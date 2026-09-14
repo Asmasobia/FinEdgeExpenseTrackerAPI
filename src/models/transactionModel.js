@@ -44,9 +44,13 @@
 
 const path = require('path');
 
+const config = require('../config');
 const { mutate, readArray } = require('../utils/jsonStore');
 
-const transactionsFilePath = path.join(__dirname, '../data/transactions.json');
+// Resolved from config rather than `__dirname/../data`, so the test suite can point the whole
+// application at a temp directory instead of overwriting the developer's real data files. See the
+// `dataDir` note in src/config.js.
+const transactionsFilePath = path.join(config.dataDir, 'transactions.json');
 
 /**
  * Reject a missing or malformed owner id before it can be used as a filter.

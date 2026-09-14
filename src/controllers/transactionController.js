@@ -93,3 +93,21 @@ exports.getSummary = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * Budget suggestion for the caller.
+ *
+ * 200 even when there is not enough data to suggest anything. "I looked, and here is why there is no
+ * figure" is a successful answer to the question that was asked — the request was valid and the
+ * server did its job. A 404 would imply the endpoint or the resource does not exist, and a 204 would
+ * discard the explanation the client needs in order to say something useful to the user. The
+ * `basis` field in the body is what distinguishes the cases.
+ */
+exports.getInsights = async (req, res, next) => {
+  try {
+    const suggestion = await transactionService.getInsights(req.user.userId);
+    res.status(200).json(suggestion);
+  } catch (error) {
+    next(error);
+  }
+};

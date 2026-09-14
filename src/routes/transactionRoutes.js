@@ -7,6 +7,7 @@ const {
   updateTransaction,
   deleteTransaction,
   getSummary,
+  getInsights,
 } = require('../controllers/transactionController');
 const { requireAuth } = require('../middleware/auth');
 const validator = require('../middleware/validator');
@@ -42,7 +43,8 @@ router.use(requireAuth);
  * registered, the handler is correct, the URL is right, and it still 404s, because a
  * different handler answered.
  *
- * The general rule: specific literal paths before parameterised ones at the same depth.
+ * The general rule: specific literal paths before parameterised ones at the same depth. Both
+ * literal routes below sit above `/:id` for that reason, and any future one must too.
  *
  * (The README advertises this as `GET /summary`. It lives under `/transactions` instead,
  * because a summary is a derived view of the transactions collection rather than a resource
@@ -50,6 +52,11 @@ router.use(requireAuth);
  * to match a doc that describes an endpoint which never existed.)
  */
 router.get('/summary', getSummary);
+
+// The budget suggestion, previously an unreachable utility file. Same ordering constraint as
+// `/summary` above — below `/:id` it would be answered by `getTransactionById` looking for a record
+// with the id "insights".
+router.get('/insights', getInsights);
 
 /**
  * POST and PATCH now use DIFFERENT validators. They used to share one, which is why

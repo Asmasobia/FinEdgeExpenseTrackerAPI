@@ -17,9 +17,13 @@
 
 const path = require('path');
 
+const config = require('../config');
 const { mutate, readArray } = require('../utils/jsonStore');
 
-const usersFilePath = path.join(__dirname, '../data/users.json');
+// Resolved from config rather than `__dirname/../data`, so the test suite can point the whole
+// application at a temp directory instead of overwriting the developer's real data files. See the
+// `dataDir` note in src/config.js.
+const usersFilePath = path.join(config.dataDir, 'users.json');
 
 /** Normalised form used on both write and read, so one address cannot become two accounts. */
 const normaliseEmail = (email) => email.trim().toLowerCase();
