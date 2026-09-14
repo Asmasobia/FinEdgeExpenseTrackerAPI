@@ -28,39 +28,65 @@ const analytics = require('../utils/analytics');
  * then re-asserts `id` last: without that, a request body containing its own `"id"` would
  * choose its own primary key, letting a caller overwrite an existing record through the
  * create endpoint.
+ *
+ * `userId` is stamped here, from the verified token, and is re-asserted after `...data` for
+ * the same reason `id` is — a request body carrying `"userId": "<somebody else>"` must not
+ * be able to file an expense in a stranger's ledger. The rule across this whole codebase is
+ * that identity comes from the token and only from the token; the body is user input, and
+ * user input never names its own owner.
+ *
+ * Before this, transactions had no `userId` field at all. There was no ownership model to
+ * enforce even if a token had been checked — one shared global ledger where every user saw
+ * and edited everyone's spending. That is why this slice touches four files rather than
+ * just adding a middleware: authentication without ownership answers "who are you?" and
+ * then ignores the answer.
  */
-exports.addTransaction = async (data) => {
+exports.addTransaction = async (ownerId, data) => {
   const transaction = {
     ...data,
     id: crypto.randomUUID(),
+    userId: ownerId,
     createdAt: new Date().toISOString(),
   };
   await transactionModel.create(transaction);
   return transaction;
 };
 
-exports.getAllTransactions = async () => transactionModel.getAll();
+/**
+ * Every function below takes `ownerId` first and passes it down. The repetition is the
+ * feature: there is no code path from a route to the data file that does not carry an owner,
+ * so scoping cannot be forgotten in one handler while the other four are correct.
+ */
+exports.getAllTransactions = async (ownerId) => transactionModel.getAllForOwner(ownerId);
 
-exports.getTransactionById = async (id) => transactionModel.findById(id);
+exports.getTransactionById = async (ownerId, id) => transactionModel.findByIdForOwner(id, ownerId);
 
-exports.updateTransaction = async (id, data) => transactionModel.update(id, data);
+exports.updateTransaction = async (ownerId, id, data) => transactionModel.updateForOwner(id, ownerId, data);
 
 // Renamed from the model's side: this used to call `transactionModel.delete`, which did not
-// exist. The model now exports `remove` — `delete` is a reserved word, and while
+// exist. The model now exports `removeForOwner` — `delete` is a reserved word, and while
 // `exports.delete` is legal as a property name, a bare `delete(...)` reads like the
-// operator and invites exactly this kind of mismatch.
-exports.deleteTransaction = async (id) => transactionModel.remove(id);
+// operator and invites exactly this kind of mismatch. The `ForOwner` suffix on the model's
+// functions is doing similar work: a reader skimming a call site sees that a scope is being
+// applied, instead of having to open the model to find out whether it is.
+exports.deleteTransaction = async (ownerId, id) => transactionModel.removeForOwner(id, ownerId);
 
 /**
- * Income/expense totals across all transactions.
+ * Income/expense totals across the caller's own transactions.
  *
  * This called `analytics.generateSummary`, which does not exist — the module exports
  * `calculateSummary`. A third broken call site of the same kind, and it went unnoticed
- * because no route is wired to this function: the README advertises `GET /summary`, but
- * no such route was ever registered. The endpoint is added in the routing work; the name
- * is corrected here so the function is at least callable.
+ * because no route was wired to this function: the README advertises `GET /summary`, but no
+ * such route was ever registered. The name is corrected and the route now exists.
+ *
+ * An aggregate is worth a second look when adding ownership, because it is the easiest place
+ * to leak by accident. A list endpoint that forgets to scope is obvious the moment you look
+ * at the response — you can see somebody else's rent in it. A *total* that forgets to scope
+ * returns a single plausible-looking number that happens to include every user's spending,
+ * and nothing about the response says so. Reading through the aggregate's own owner-scoped
+ * query, rather than an unscoped `getAll`, is what keeps that from happening.
  */
-exports.getSummary = async () => {
-  const transactions = await transactionModel.getAll();
+exports.getSummary = async (ownerId) => {
+  const transactions = await transactionModel.getAllForOwner(ownerId);
   return analytics.calculateSummary(transactions);
 };
